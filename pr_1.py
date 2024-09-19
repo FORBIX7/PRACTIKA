@@ -7,7 +7,7 @@ from aiogram import F
 from dotenv import load_dotenv
 import os
 
-# Загрузка переменных окружения
+# Загрузка переменных окружени
 load_dotenv()
 
 # Инициализация OpenAI API
