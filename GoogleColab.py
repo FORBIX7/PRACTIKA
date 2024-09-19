@@ -11,7 +11,7 @@ import asyncio
 # Применяем nest_asyncio для интеграции с существующим циклом событий
 nest_asyncio.apply()
 
-# Указываем ключи API и токен бота
+# Указываем ключи API и токен бот
 OPENAI_API_KEY = "Your_token"
 TELEGRAM_BOT_TOKEN = "Your_token"
 
