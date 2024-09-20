@@ -12,8 +12,8 @@ import asyncio
 nest_asyncio.apply()
 
 # Указываем ключи API и токен бот
-OPENAI_API_KEY = "Your_token"
-TELEGRAM_BOT_TOKEN = "Your_token"
+OPENAI_API_KEY = "sk-JvzZH4VV_QaR_HHv8icCfVoAq9SuPVu166bdIbwLZHT3BlbkFJ9ZFFbBpxbwUWqdmIrtmdQV9RZ2Zwqhfm0vfPjInlcA"
+TELEGRAM_BOT_TOKEN = "5833343041:AAEnos8mVF5YqgqVKgCv4jf-e6WQr5LZJIk"
 
 
 
