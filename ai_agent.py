@@ -2,6 +2,9 @@ import requests
 import re
 import sqlalchemy as sa
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy import inspect
+from sqlalchemy_schemadisplay import create_schema_graph
+from sqlalchemy.orm import configure_mappers
 
 
 class SQLAgent:
@@ -12,15 +15,41 @@ class SQLAgent:
         self.api_url = api_url
         self.load_database()
 
+    def generate_er_diagram(self):
+        """Генерация ER-диаграммы базы данных с использованием Graphviz."""
+        if not self.metadata.tables:
+            print("Нет данных для создания диаграммы. Загрузите базу данных.")
+            return
+
+        configure_mappers()  # Настраиваем маппинг SQLAlchemy
+
+        try:
+            # Создаем граф ER-диаграммы
+            graph = create_schema_graph(metadata=self.metadata,
+                                        show_datatypes=True,  # Показывать типы данных
+                                        show_indexes=False,  # Не показывать индексы
+                                        rankdir='LR',  # Направление диаграммы слева направо
+                                        concentrate=False)  # Упрощение диаграммы
+
+            # Сохраняем диаграмму в файл
+            diagram_file = "er_diagram.png"
+            graph.write_png(diagram_file)
+
+            print(f"ER-диаграмма успешно создана и сохранена в файл: {diagram_file}")
+
+        except Exception as e:
+            print(f"Ошибка при создании ER-диаграммы: {e}")
+
+
     def load_database(self):
         """Загрузка и анализ структуры базы данных."""
         try:
             self.metadata.reflect(bind=self.engine)  # Reflect database structure
         except SQLAlchemyError as e:
-            print(f"Error reflecting database structure: {e}")
+            print(f"Ошибка при загрузке структуры базы данных: {e}")
 
         if not self.metadata.tables:
-            print("No tables found in the database. Please check your database.")
+            print("Таблицы отсутствуют в базе данных. Проверьте базу данных.")
             return
 
         for table_name in self.metadata.tables:
@@ -28,34 +57,37 @@ class SQLAgent:
             self.tables_info[table_name] = {
                 'columns': {col.name: str(col.type) for col in table.columns},
                 'primary_keys': [col.name for col in table.primary_key],
-                'foreign_keys': {fk.column: str(fk.target_full) for fk in table.foreign_keys}
+                'foreign_keys': {fk.column.name: str(fk.target_fullname) for fk in table.foreign_keys}
             }
-        print("Database loaded. Available tables:", list(self.tables_info.keys()))
+        print("\n=== База данных загружена. Доступные таблицы ===")
+        print(list(self.tables_info.keys()))
+        print("===============================================\n")
 
     def generate_sql(self, query):
-        """Отправляет запрос к модели API для генерации SQL-запроса."""
+        """Отправляет запрос к модели API для генерации SQL-запроса и выводит структурированный результат."""
         if not self.tables_info:
-            print("No tables loaded. Ensure the database contains tables and they are reflected.")
+            print("База данных пуста. Начните с создания первой таблицы.")
             return None
 
         db_structure = "\n".join([
-            f"Table {name}: columns {', '.join(info['columns'].keys())}, "
-            f"primary keys {', '.join(info['primary_keys'])}, "
-            f"foreign keys {', '.join(info['foreign_keys'].keys())}"
+            f"Таблица {name}: колонки {', '.join(info['columns'].keys())}, "
+            f"первичные ключи {', '.join(info['primary_keys'])}, "
+            f"внешние ключи {', '.join(info['foreign_keys'].keys())}"
             for name, info in self.tables_info.items()
         ])
 
-        # Improved prompt
         prompt = (
-            f"На основе следующей структуры базы данных:\n{db_structure}\n"
-            f"Напиши ТОЛЬКО ОДИН SQL запрос к следующему сообщению пользователя: '{query}'.\n"
+            "Ты — эксперт по SQL для базы данных на SQLite. Твоя задача — на основе предоставленной структуры базы данных генерировать только правильные SQL-запросы в ответ на запрос пользователя. Структура базы данных:\n"
+            f"{db_structure}\n\n"
+            "Ответь только SQL-запросом без дополнительных пояснений или комментариев. Запрос пользователя:\n"
+            f"'{query}'\n"
+            "Выведи корректный SQL-запрос."
         )
 
         payload = {
-            "model": "your_model",  # Замените на вашу модель
             "prompt": prompt,
-            "max_tokens": 50,
-            "temperature": 0.001  # Set low temperature for direct responses
+            "max_tokens": 100,  # Увеличил количество токенов для ответа
+            "temperature": 0
         }
 
         try:
@@ -63,74 +95,132 @@ class SQLAgent:
             response.raise_for_status()
             model_response = response.json().get('choices', [{}])[0].get('text', '').strip()
 
-            print(f"Model Response: {model_response}")
+            # Улучшенная фильтрация лишнего текста
+            model_response = re.sub(r'<\|.*?\|>|```sql|://|<!--.*?-->|//.*|/\*.*?\*/|<!\[endif.*?\]', '',
+                                    model_response).strip()
 
-            # Split model response into lines and look for SQL queries
+            print("\n=== Ответ модели ===")
+            print(model_response)
+            print("====================\n")
+
             sql_queries = []
-            # Define a set of SQL keywords to check for
-            sql_keywords = {'INSERT', 'SELECT', 'UPDATE', 'DELETE', 'CREATE', 'ALTER', 'DROP', 'MERGE'}
+            current_query = ""
 
+            # Обработка ответа модели
             for line in model_response.splitlines():
-                # Check if any keyword is present in the line (case insensitive)
-                if any(keyword in line.upper() for keyword in sql_keywords):
-                    sql_queries.append(line.strip())  # Add the entire line with the query
+                line = line.strip()
+                if line:
+
+                    # Удаляем SQL-комментарии
+                    line = re.sub(r'--.*$', '', line).strip()  # Удаляем однострочные комментарии
+
+                    # Проверяем на корректный SQL-запрос
+                    if re.match(r'^(SELECT|INSERT|UPDATE|DELETE|CREATE|ALTER|DROP)', line, re.IGNORECASE):
+                        if current_query:
+                            sql_queries.append(current_query.strip())
+                        current_query = line
+                    else:
+                        current_query += " " + line
+
+                    # Проверка на завершение запроса
+                    if current_query.endswith(';'):  # Проверяем на точку с запятой
+                        sql_queries.append(current_query.strip())
+                        current_query = ""
+
+            # Исключение пустых строк и некорректных SQL-запросов
+            sql_queries = [sql for sql in sql_queries if sql]
 
             if sql_queries:
-                return sql_queries  # Return the list of detected SQL queries
+                print("\n=== Сгенерированные SQL-запросы ===")
+                for idx, sql in enumerate(sql_queries, 1):
+                    print(f"{idx}. {sql}")
+                print("==============================\n")
+                return sql_queries
             else:
-                print("No valid SQL queries found in model response.")
+                print("Не удалось найти корректные SQL-запросы в ответе модели.")
                 return None
 
-
         except requests.exceptions.RequestException as e:
-            print(f"An error occurred: {e}")
+            print(f"Произошла ошибка при запросе: {e}")
             return None
 
     def execute_sql_queries(self, queries):
-        """Executes the generated SQL queries in the database and outputs the result of the change."""
+        """Выполнение сгенерированных SQL-запросов и вывод результата."""
         with self.engine.connect() as connection:
+            inspector = inspect(self.engine)
             for query in queries:
                 try:
-                    if query and query.endswith(";"):  # Check if the query is complete
-                        print(f"Executing query: {query}")
+                    if query.startswith("CREATE TABLE"):
+                        table_name = re.search(r'CREATE TABLE (\w+)', query).group(1)
+                        existing_tables = inspector.get_table_names()
+                        if table_name in existing_tables:
+                            print(f"Таблица '{table_name}' уже существует. Пропуск запроса: {query}")
+                            continue
+
+                    if query and query.endswith(";"):
+                        print(f"\n=== Выполняется запрос ===\n{query}")
                         result = connection.execute(sa.text(query))
+
                         if result.returns_rows:
-                            for row in result:
-                                print(row)
+                            rows = result.fetchall()
+                            if rows:
+                                print("\n=== Результат выполнения запроса (всего строк: {}): ===".format(len(rows)))
+                                for row in rows:
+                                    print(row)
+                                print("===============================\n")
+                            else:
+                                print("\n=== Запрос выполнен, но данные не найдены. ===\n")
                         else:
-                            connection.commit()  # Commit the transaction for insert/update
-                            print(f"Query executed successfully: {query}")
+                            connection.commit()  # Коммитим изменения для запросов, не возвращающих данные
+                            print("Запрос выполнен успешно!")
                 except SQLAlchemyError as e:
-                    print(f"Error executing query: {e}")
+                    print(f"Ошибка выполнения запроса: {e}")
+        print("Выполнение запросов завершено.")
 
     def display_tables_info(self):
         """Вывод информации о всех таблицах в базе данных."""
         if not self.tables_info:
-            print("No tables available.")
+            print("Таблицы отсутствуют в базе данных.")
+            return
+
+        print("\n" + "=" * 50)
+        print("Информация о таблицах в базе данных:")
+        print("=" * 50)
+
         for table_name, info in self.tables_info.items():
-            print(f"\nTable: {table_name}")
-            print("Columns:", info['columns'])
-            print("Primary Keys:", info['primary_keys'])
-            print("Foreign Keys:", info['foreign_keys'])
+            print(f"\nТаблица: {table_name}")
+            print("-" * 50)
+            print(f"{'Колонки:':<15}",
+                  ", ".join([f"{col_name} ({col_type})" for col_name, col_type in info['columns'].items()]))
+            print(f"{'Первичные ключи:':<15}", ", ".join(info['primary_keys']) if info['primary_keys'] else "Нет")
+            if info['foreign_keys']:
+                print(f"{'Внешние ключи:':<15}",
+                      ", ".join([f"{col} -> {fk}" for col, fk in info['foreign_keys'].items()]))
+            else:
+                print(f"{'Внешние ключи:':<15} Нет")
+            print("-" * 50)
+
+        print("\nКонец списка таблиц.")
+        print("=" * 50)
 
 
 # Пример использования
 if __name__ == '__main__':
-    db_url = 'sqlite:///12.db'  # Укажите путь к вашей локальной БД
+    db_url = 'sqlite:///12.db'
     agent = SQLAgent(db_url)
 
-    # Вывод информации о таблицах в базе данных
     agent.display_tables_info()
 
-    # Пример генерации SQL-запроса от пользователя
-    user_query = input("Введите ваш запрос (например, 'Создай пользователя Саша 40 лет'): ")
-    sql_queries = agent.generate_sql(user_query)
-
-    if sql_queries:
-        print(f"Сгенерированные SQL-запросы: {sql_queries}")
-        agent.execute_sql_queries(sql_queries)  # Execute all detected SQL queries
+    user_query = input("Введите ваш запрос: ")
+    if 'диаграмм' in user_query.lower():
+        agent.generate_er_diagram()  # Генерация ER-диаграммы
     else:
-        print("Не удалось сгенерировать SQL-запрос.")
+        sql_queries = agent.generate_sql(user_query)
 
-    # Завершение программы
+        if sql_queries:
+            agent.execute_sql_queries(sql_queries)
+        else:
+            print("Не удалось сгенерировать SQL-запрос.")
+
     print("Завершение программы.")
+
