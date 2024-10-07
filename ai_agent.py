@@ -33,29 +33,30 @@ class SQLAgent:
         print("Database loaded. Available tables:", list(self.tables_info.keys()))
 
     def generate_sql(self, query):
-        """Отправляет запрос к модели API для генерации SQL-запроса."""
+        """Отправляет запрос к модели API для генерации SQL-запроса и выводит структурированный результат."""
         if not self.tables_info:
-            print("No tables loaded. Ensure the database contains tables and they are reflected.")
+            print("База данных пуста. Начните с создания первой таблицы.")
             return None
 
         db_structure = "\n".join([
-            f"Table {name}: columns {', '.join(info['columns'].keys())}, "
-            f"primary keys {', '.join(info['primary_keys'])}, "
-            f"foreign keys {', '.join(info['foreign_keys'].keys())}"
+            f"Таблица {name}: колонки {', '.join(info['columns'].keys())}, "
+            f"первичные ключи {', '.join(info['primary_keys'])}, "
+            f"внешние ключи {', '.join(info['foreign_keys'].keys())}"
             for name, info in self.tables_info.items()
         ])
 
-        # Improved prompt
         prompt = (
-            f"На основе следующей структуры базы данных:\n{db_structure}\n"
-            f"Напиши ТОЛЬКО ОДИН SQL запрос к следующему сообщению пользователя: '{query}'.\n"
+            "Ты — эксперт по SQL для базы данных на SQLite. Твоя задача — на основе предоставленной структуры базы данных генерировать только правильные SQL-запросы в ответ на запрос пользователя. Структура базы данных:\n"
+            f"{db_structure}\n\n"
+            "Ответь только SQL-запросом без дополнительных пояснений или комментариев. Запрос пользователя:\n"
+            f"'{query}'\n"
+            "Выведи корректный SQL-запрос."
         )
 
         payload = {
-            "model": "your_model",  # Замените на вашу модель
             "prompt": prompt,
-            "max_tokens": 50,
-            "temperature": 0.001  # Set low temperature for direct responses
+            "max_tokens": 60,  # Увеличил количество токенов для ответа
+            "temperature": 0
         }
 
         try:
@@ -63,27 +64,49 @@ class SQLAgent:
             response.raise_for_status()
             model_response = response.json().get('choices', [{}])[0].get('text', '').strip()
 
-            print(f"Model Response: {model_response}")
+            # Улучшенная фильтрация лишнего текста
+            model_response = re.sub(r'<\|.*?\|>|```sql|://|<!--.*?-->|//.*|/\*.*?\*/|<!\[endif.*?\]', '',
+                                    model_response).strip()
 
-            # Split model response into lines and look for SQL queries
+            print("\n=== Ответ модели ===")
+            print(model_response)
+            print("====================\n")
+
             sql_queries = []
-            # Define a set of SQL keywords to check for
-            sql_keywords = {'INSERT', 'SELECT', 'UPDATE', 'DELETE', 'CREATE', 'ALTER', 'DROP', 'MERGE'}
+            current_query = ""
 
+            # Обработка ответа модели
             for line in model_response.splitlines():
-                # Check if any keyword is present in the line (case insensitive)
-                if any(keyword in line.upper() for keyword in sql_keywords):
-                    sql_queries.append(line.strip())  # Add the entire line with the query
+                line = line.strip()
+                if line:
+                    # Проверяем на корректный SQL-запрос
+                    if re.match(r'^(SELECT|INSERT|UPDATE|DELETE|CREATE|ALTER|DROP)', line, re.IGNORECASE):
+                        if current_query:
+                            sql_queries.append(current_query.strip())
+                        current_query = line
+                    else:
+                        current_query += " " + line
+
+                    # Проверка на завершение запроса
+                    if current_query.endswith(';'):  # Проверяем на точку с запятой
+                        sql_queries.append(current_query.strip())
+                        current_query = ""
+
+            # Исключение пустых строк и некорректных SQL-запросов
+            sql_queries = [sql for sql in sql_queries if sql]
 
             if sql_queries:
-                return sql_queries  # Return the list of detected SQL queries
+                print("\n=== Сгенерированные SQL-запросы ===")
+                for idx, sql in enumerate(sql_queries, 1):
+                    print(f"{idx}. {sql}")
+                print("==============================\n")
+                return sql_queries
             else:
-                print("No valid SQL queries found in model response.")
+                print("Не удалось найти корректные SQL-запросы в ответе модели.")
                 return None
 
-
         except requests.exceptions.RequestException as e:
-            print(f"An error occurred: {e}")
+            print(f"Произошла ошибка при запросе: {e}")
             return None
 
     def execute_sql_queries(self, queries):
