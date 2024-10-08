@@ -101,7 +101,7 @@ class SQLAgent:
 
         payload = {
             "prompt": prompt,
-            "max_tokens": 100,  # Увеличил количество токенов для ответа
+            "max_tokens": 150,  # Увеличил количество токенов для ответа
             "temperature": 0
         }
 
@@ -110,7 +110,7 @@ class SQLAgent:
             response.raise_for_status()
             model_response = response.json().get('choices', [{}])[0].get('text', '').strip()
 
-            # Improved filtering of unnecessary text
+            # Улучшенная фильтрация ненужного текста
             model_response = re.sub(r'<\|.*?\|>|```sql|://|<!--.*?-->|//.*|/\*.*?\*/|<!\[endif.*?\]', '',
                                     model_response).strip()
 
@@ -121,26 +121,27 @@ class SQLAgent:
             sql_queries = []
             current_query = ""
 
-            # Обработка ответа модели
+            # Обработка ответа модели, включая многострочные запросы
             for line in model_response.splitlines():
                 line = line.strip()
-                if line:
+                # Удаляем однострочные комментарии
+                line = re.sub(r'--.*$', '', line).strip()
+                if not line:  # Пропускаем пустые строки
+                    continue
 
-                    # Удаляем SQL-комментарии
-                    line = re.sub(r'--.*$', '', line).strip()  # Удаляем однострочные комментарии
-
-                    # Проверяем на корректный SQL-запрос
-                    if re.match(r'^(SELECT|INSERT|UPDATE|DELETE|CREATE|ALTER|DROP)', line, re.IGNORECASE):
-                        if current_query:
-                            sql_queries.append(current_query.strip())
-                        current_query = line
-                    else:
+                # Проверяем на корректный SQL-запрос
+                if re.match(r'^(SELECT|INSERT|UPDATE|DELETE|CREATE|ALTER|DROP)', line, re.IGNORECASE):
+                    if current_query:
                         current_query += " " + line
+                    else:
+                        current_query = line
+                else:
+                    current_query += " " + line
 
-                    # Проверка на завершение запроса
-                    if current_query.endswith(';'):  # Проверяем на точку с запятой
-                        sql_queries.append(current_query.strip())
-                        current_query = ""
+                # Проверка на завершение запроса
+                if current_query.endswith(';'):
+                    sql_queries.append(current_query.strip())
+                    current_query = ""
 
             # Исключение пустых строк и некорректных SQL-запросов
             sql_queries = [sql for sql in sql_queries if sql]
@@ -151,7 +152,7 @@ class SQLAgent:
             if unique_sql_queries:
                 print("\n=== Сгенерированные SQL-запросы ===")
                 for idx, sql in enumerate(unique_sql_queries, 1):
-                    print(f"{idx}. {sql.strip(';')}")  # Strip semicolon for display
+                    print(f"{idx}. {sql.strip(';')}")
                 print("==============================\n")
                 return unique_sql_queries
             else:
@@ -161,7 +162,6 @@ class SQLAgent:
         except requests.exceptions.RequestException as e:
             print(f"Произошла ошибка при запросе: {e}")
             return None
-
     def execute_sql_queries(self, queries):
         """Выполнение сгенерированных SQL-запросов и вывод результата."""
         with self.engine.connect() as connection:
