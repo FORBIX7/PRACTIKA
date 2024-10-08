@@ -46,11 +46,26 @@ class SQLAgent:
         ])
 
         prompt = (
-            "Ты — эксперт по SQL для базы данных на SQLite. Твоя задача — на основе предоставленной структуры базы данных генерировать только правильные SQL-запросы в ответ на запрос пользователя. Структура базы данных:\n"
-            f"{db_structure}\n\n"
-            "Ответь только SQL-запросом без дополнительных пояснений или комментариев. Запрос пользователя:\n"
-            f"'{query}'\n"
-            "Выведи корректный SQL-запрос."
+            "You are an expert SQL developer specializing in SQLite databases. "
+            "Your task is to generate correct SQL queries based on the provided database structure in response to user queries.\n\n"
+            "Here is the structure of the database:\n"
+            f"<database_structure>\n"
+            f"{db_structure}\n"
+            f"</database_structure>\n\n"
+            "Your task is to generate a correct SQL query that addresses the user's request. Follow these guidelines:\n\n"
+            "1. Use only the tables and columns provided in the database structure.\n"
+            "2. Ensure your query is syntactically correct for SQLite.\n"
+            "3. Use appropriate JOIN clauses when querying multiple tables.\n"
+            "4. Include WHERE clauses as necessary to filter results.\n"
+            "5. Use aggregation functions (COUNT, SUM, AVG, etc.) when appropriate.\n"
+            "6. Order results using ORDER BY if it makes sense for the query.\n"
+            "7. Limit results using LIMIT if specified in the user's request.\n\n"
+            "The user's query is:\n"
+            f"<user_query>\n"
+            f"{query}\n"
+            f"</user_query>\n\n"
+            "Based on the database structure and the user's query, generate the appropriate SQL query. "
+            "Output only the SQL query without any additional explanations or comments."
         )
 
         payload = {
