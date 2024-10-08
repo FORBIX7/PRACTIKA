@@ -101,7 +101,7 @@ class SQLAgent:
 
         payload = {
             "prompt": prompt,
-            "max_tokens": 150,  # Увеличил количество токенов для ответа
+            "max_tokens": 100,  # Увеличил количество токенов для ответа
             "temperature": 0
         }
 
@@ -224,7 +224,7 @@ class SQLAgent:
 
 # Пример использования
 if __name__ == '__main__':
-    db_url = 'sqlite:///12.db'
+    db_url = 'sqlite:///chinook.db'
     agent = SQLAgent(db_url)
 
     agent.display_tables_info()
