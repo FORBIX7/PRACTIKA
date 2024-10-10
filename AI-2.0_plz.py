@@ -49,31 +49,54 @@ class SQLAgent:
             print(f"Произошла ошибка при запросе: {e}")
             return None
 
-    def generate_er_diagram(self):
-        """Генерация ER-диаграммы базы данных с использованием Graphviz."""
+    def generate_er_diagram(self, output_file="er_diagram.png", output_format="png", log=False):
+        """
+        Генерация ER-диаграммы базы данных с использованием Graphviz.
+
+        :param output_file: Название файла для сохранения диаграммы (по умолчанию "er_diagram.png").
+        :param output_format: Формат файла (например, "png", "pdf", "svg"). По умолчанию "png".
+        :param log: Логирование процесса (True или False). По умолчанию False.
+        """
         if not self.metadata.tables:
             print("Нет данных для создания диаграммы. Загрузите базу данных.")
             return
 
-        configure_mappers()  # Настраиваем маппинг SQLAlchemy
+        # Настраиваем маппинг SQLAlchemy
+        configure_mappers()
 
         try:
+            # Логирование начального состояния
+            if log:
+                print("Начинаем создание ER-диаграммы...")
+
             # Создаем граф ER-диаграммы
-            graph = create_schema_graph(metadata=self.metadata,
-                                        engine=self.engine,  # Передаем движок базы данных
-                                        show_datatypes=True,  # Показывать типы данных
-                                        show_indexes=False,  # Не показывать индексы
-                                        rankdir='LR',  # Направление диаграммы слева направо
-                                        concentrate=False)  # Упрощение диаграммы
+            graph = create_schema_graph(
+                metadata=self.metadata,
+                engine=self.engine,  # Передаем движок базы данных
+                show_datatypes=True,  # Показывать типы данных
+                show_indexes=False,  # Не показывать индексы
+                rankdir='LR',  # Направление диаграммы слева направо
+                concentrate=False  # Упрощение диаграммы
+            )
+
+            # Определяем полный путь к файлу
+            file_extension = output_format.lower()
+            if not output_file.endswith(f".{file_extension}"):
+                output_file = f"{output_file}.{file_extension}"
 
             # Сохраняем диаграмму в файл
-            diagram_file = "er_diagram.png"
-            graph.write_png(diagram_file)
+            graph.write(output_file, format=output_format)
+            print(f"ER-диаграмма успешно создана и сохранена в файл: {output_file}")
+            if log:
+                print(f"ER-диаграмма успешно создана и сохранена в файл: {output_file}")
 
-            print(f"ER-диаграмма успешно создана и сохранена в файл: {diagram_file}")
-
+        except ImportError as e:
+            print("Необходимо установить pygraphviz для генерации диаграмм.")
+            print(f"Ошибка: {e}")
         except Exception as e:
             print(f"Ошибка при создании ER-диаграммы: {e}")
+            if log:
+                print("Проверьте настройки подключения к базе данных и целостность данных.")
 
     def load_database(self):
         """Загрузка и анализ структуры базы данных."""
@@ -235,7 +258,7 @@ class SQLAgent:
 
         payload = {
             "prompt": prompt,
-            "max_tokens": 1000,  # Увеличил количество токенов для ответа
+            "max_tokens": 600,  # Увеличил количество токенов для ответа
             "temperature": 0
         }
 
@@ -320,35 +343,58 @@ class SQLAgent:
 # Пример использования
 if __name__ == '__main__':
     db_url = 'sqlite:///chinook.db'
-    agent = SQLAgent(db_url)
+    try:
+        agent = SQLAgent(db_url)
+        print("Подключение к базе данных успешно.")
+    except Exception as e:
+        print(f"Ошибка подключения к базе данных: {e}")
+        exit(1)
 
-    while (1):
-        agent.display_tables_info()
+    while True:
+        try:
+            # Отображение информации о таблицах базы данных
+            agent.display_tables_info()
 
-        user_query = input("Введите ваш запрос: ")
-        if 'диаграмм' in user_query.lower():
-            agent.generate_er_diagram()  # Генерация ER-диаграммы
-        else:
-            query_type = agent.classify_query(user_query)
+            # Получение запроса от пользователя
+            user_query = input("Введите ваш запрос (или напишите 'exit' для выхода): ").strip().lower()
 
-            if 'sql_generation' in query_type:
-                print("Classification: sql_generation")
-                sql_queries = agent.generate_sql(user_query)
+            # Выход, если пользователь вводит 'exit'
+            if user_query == 'exit':
+                print("Завершение программы.")
+                break
 
-                if sql_queries:
-                    agent.execute_sql_queries(sql_queries)
-                else:
-                    print("Не удалось сгенерировать SQL-запрос.")
-            elif 'general_db_info' in query_type:
-                print("Classification: general_db_info")
-                agent.generate_info(user_query)  # Здесь можно добавить обработку других вопросов о БД
+            # Обработка запросов, связанных с диаграммами
+            if 'диаграмм' in user_query:
+                agent.generate_er_diagram()  # Генерация ER-диаграммы
             else:
-                print("Не удалось классифицировать запрос.")
+                query_type = agent.classify_query(user_query)
 
+                # Обработка SQL-запросов
+                if 'sql_generation' in query_type:
+                    print("Classification: sql_generation")
+                    sql_queries = agent.generate_sql(user_query)
 
+                    if sql_queries:
+                        agent.execute_sql_queries(sql_queries)
+                    else:
+                        print("Не удалось сгенерировать SQL-запрос.")
+
+                # Обработка запросов, связанных с общей информацией о базе данных
+                elif 'general_db_info' in query_type:
+                    print("Classification: general_db_info")
+                    agent.generate_info(user_query)
+
+                # Обработка неклассифицированных запросов
+                else:
+                    print("Не удалось классифицировать запрос.")
+
+        except Exception as e:
+            print(f"Произошла ошибка: {e}")
+
+        # Запрос на продолжение или выход
         print("==============================")
-        if "exit" == input("Напишите 'exit', чтобы выйти или нажмите Enter, чтобы продолжить...   "):
+        if input("Напишите 'exit', чтобы выйти, или нажмите Enter для продолжения... ").strip().lower() == "exit":
             break
         print("==============================")
 
-    print("Завершение программы.")
+    print("Программа завершена.")
