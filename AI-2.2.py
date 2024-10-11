@@ -26,7 +26,8 @@ class SQLAgent:
             "to provide an answer to the user's question.\n\n"
             "User's query:\n"
             f"{query}\n\n"
-            "Output only the category (either 'sql_generation', 'general_db_info', or 'narrow_query') without any additional explanations."
+            "Output only the category (either 'sql_generation', 'general_db_info', or 'narrow_query') without any "
+            "additional explanations."
         )
 
         payload = {
@@ -41,7 +42,7 @@ class SQLAgent:
             classification = response.json().get('choices', [{}])[0].get('text', '').strip()
 
             # Clean up the classification response
-            classification = re.sub(r'<\|.*?\|>', '', classification).strip()
+            classification = re.sub(r'<\|.*?\|>|```sql|://|<!--.*?-->|//.*|/\*.*?\*/|<!\[endif.*?\]', '', classification).strip()
 
             print(f"Classification: {classification}")  # Add this line to help with debugging
             return classification
@@ -169,7 +170,7 @@ class SQLAgent:
             model_response = response.json().get('choices', [{}])[0].get('text', '').strip()
 
             # Улучшенная фильтрация ненужного текста
-            model_response = re.sub(r'<\|.*?\|>|```sql|://|<!--.*?-->|//.*|/\*.*?\*/|<!\[endif.*?\]', '',
+            model_response = re.sub(r'<\|.*?\|>|```sql|://|<!--.*?-->|//.*|/\*.*?\*/|<!\[endif.*?\]SQL Query:', '',
                                     model_response).strip()
 
             print("\n=== Ответ модели ===")
@@ -288,14 +289,20 @@ class SQLAgent:
         result_string = "\n".join([str(row) for row in sql_result])
 
         prompt = (
-            "You are an expert in databases and SQL analysis. "
-            "Based on the provided SQL query result, answer the user's question clearly and concisely.\n\n"
-            "SQL query result:\n"
+            "You are a highly skilled database expert with deep knowledge of SQL queries and data analysis. "
+            "Your task is to interpret the provided SQL query result and answer the user's question in a clear, precise, and concise manner.\n\n"
+            "Here is the result of the SQL query:\n"
             f"{result_string}\n\n"
-            "User's query was:\n"
+            "The user's question is:\n"
             f"{query}\n\n"
-            "Based on the SQL result and the user's query, provide a clear and accurate answer. "
-            "If the result is empty or no data is found, explain this to the user."
+            "Based on the SQL query result, respond to the user with an accurate, concise, and contextually relevant explanation. "
+            "Ensure your answer directly addresses the user's question.\n\n"
+            "Consider the following guidelines when crafting your response:\n"
+            "- If the query result contains data, provide a well-structured and insightful answer, highlighting key findings and patterns if necessary.\n"
+            "- If the result set is empty or no relevant data is found, clearly explain that no data was retrieved, and offer potential reasons or next steps if appropriate.\n"
+            "- Avoid including unnecessary technical jargon, focusing on clarity and simplicity.\n"
+            "- If any additional assumptions or clarifications are needed to address the user's query, mention them explicitly in your answer."
+            "Write on Russia language"
         )
 
         payload = {
@@ -320,7 +327,7 @@ class SQLAgent:
         cleaned_text = re.sub(r'<\|.*?\|>', '', response_text)
 
         # Убираем лишние символы вроде URL-подобных строк
-        cleaned_text = re.sub(r'https?://\S+', '', cleaned_text)
+        cleaned_text = re.sub(r'<\|.*?\|>|```sql|://|<!--.*?-->|//.*|/\*.*?\*/|<!\[endif.*?\]', '', cleaned_text)
 
         # Удаляем пустые строки и лишние пробелы
         cleaned_text = "\n".join([line.strip() for line in cleaned_text.splitlines() if line.strip()])
