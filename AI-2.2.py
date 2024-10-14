@@ -201,6 +201,10 @@ class SQLAgent:
 
             model_response = re.sub(r'после вывода запроса.', '',
                                     model_response).strip()
+            model_response = re.sub(r'после вывода SQL-запроса.', '',
+                                    model_response).strip()
+            model_response = re.sub(r'SQL:', '',
+                                    model_response).strip()
 
             print("\n=== Ответ модели ===")
             print(model_response)
@@ -302,6 +306,9 @@ class SQLAgent:
             # Улучшенная фильтрация ненужного текста
             model_response = re.sub(r'<\|.*?\|>|```sql|://|<!--.*?-->|//.*|/\*.*?\*/|<!\[endif.*?\]--><div class="answer"> <answer>', '',
                                     model_response).strip()
+            model_response = re.sub(
+                r'<answer>', '',
+                model_response).strip()
 
             # Обрезаем текст после слов "Ответ завершен."
             model_response = model_response.split("Ответ завершен")[0] + "Ответ завершен."
