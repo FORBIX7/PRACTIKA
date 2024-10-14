@@ -5,6 +5,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy import inspect
 from sqlalchemy_schemadisplay import create_schema_graph
 from sqlalchemy.orm import configure_mappers
+from PIL import Image
 
 
 class SQLAgent:
@@ -52,13 +53,6 @@ class SQLAgent:
             return None
 
     def generate_er_diagram(self, output_file="er_diagram.png", output_format="png", log=False):
-        """
-        Генерация ER-диаграммы базы данных с использованием Graphviz.
-
-        :param output_file: Название файла для сохранения диаграммы (по умолчанию "er_diagram.png").
-        :param output_format: Формат файла (например, "png", "pdf", "svg"). По умолчанию "png".
-        :param log: Логирование процесса (True или False). По умолчанию False.
-        """
         if not self.metadata.tables:
             print("Нет данных для создания диаграммы. Загрузите базу данных.")
             return
@@ -78,19 +72,47 @@ class SQLAgent:
                 show_datatypes=True,  # Показывать типы данных
                 show_indexes=False,  # Не показывать индексы
                 rankdir='LR',  # Направление диаграммы слева направо
-                concentrate=False  # Упрощение диаграммы
+                concentrate=True  # Упрощение диаграммы
             )
 
-            # Определяем полный путь к файлу
-            file_extension = output_format.lower()
-            if not output_file.endswith(f".{file_extension}"):
-                output_file = f"{output_file}.{file_extension}"
+            # Экспортируем диаграмму в формат .dot
+            dot_file = "er_diagram.dot"
+            graph.write(dot_file, format="dot")
+            print(f"ER-диаграмма сохранена в формате .dot: {dot_file}")
 
-            # Сохраняем диаграмму в файл
-            graph.write(output_file, format=output_format)
-            print(f"ER-диаграмма успешно создана и сохранена в файл: {output_file}")
+            # Модифицируем .dot файл для добавления стиля (цвет, шрифт, расстояния и т.д.)
+            with open(dot_file, "r") as file:
+                dot_data = file.read()
+
+            # Добавляем кастомные стили и настройки
+            styled_dot_data = dot_data.replace(
+                'node [label=',
+                'node [shape=box, style=filled, color=lightblue, fontcolor=black, fontsize=12, fontname=Helvetica, label='
+            ).replace(
+                'edge [',
+                'edge [color=gray, fontsize=10, fontname=Helvetica, '
+            ).replace(
+                'graph [',
+                'graph [size="10,10!", dpi=300, ranksep=1.5, nodesep=1.0, '  # Увеличиваем расстояния и разрешение
+            )
+
+            # Перезаписываем .dot файл с новыми стилями
+            with open(dot_file, "w") as file:
+                file.write(styled_dot_data)
+
+            # Конвертируем .dot файл в нужный формат (например, PNG)
+            output_file_with_extension = f"{output_file}.{output_format}"
+            from subprocess import run
+            run(["dot", "-T", output_format, dot_file, "-o", output_file_with_extension])
+
+            print(f"ER-диаграмма успешно создана и сохранена в файл: {output_file_with_extension}")
+
+            # Открываем изображение для отображения
+            img_display = Image.open(output_file_with_extension)
+            img_display.show()
+
             if log:
-                print(f"ER-диаграмма успешно создана и сохранена в файл: {output_file}")
+                print(f"ER-диаграмма успешно создана и сохранена в файл: {output_file_with_extension}")
 
         except ImportError as e:
             print("Необходимо установить pygraphviz для генерации диаграмм.")
@@ -156,6 +178,7 @@ class SQLAgent:
             f"</user_query>\n\n"
             "Based on the database structure and the user's query, generate the appropriate SQL query. "
             "Output only the SQL query without any additional explanations or comments."
+            "В конце ответа напиши 'Ответ завершен.'"
         )
 
         payload = {
@@ -170,7 +193,13 @@ class SQLAgent:
             model_response = response.json().get('choices', [{}])[0].get('text', '').strip()
 
             # Улучшенная фильтрация ненужного текста
-            model_response = re.sub(r'<\|.*?\|>|```sql|://|<!--.*?-->|//.*|/\*.*?\*/|<!\[endif.*?\]SQL Query:', '',
+            model_response = re.sub(r'<\|.*?\|>|```sql|://|<!--.*?-->|//.*|/\*.*?\*/|<!\[endif.*?\]SQL Query:    после вывода запроса.', '',
+                                    model_response).strip()
+
+            # Обрезаем текст после слов "Ответ завершен."
+            model_response = model_response.split("Ответ завершен")[0] + "Ответ завершен."
+
+            model_response = re.sub(r'после вывода запроса.', '',
                                     model_response).strip()
 
             print("\n=== Ответ модели ===")
@@ -256,6 +285,7 @@ class SQLAgent:
             "Based on the database structure and the user's question, provide a detailed and accurate answer. "
             "Output only the answer without any additional comments or explanations outside of the context of the user's query."
             "Write on Russia language"
+            "В конце ответа напиши 'Ответ завершен.'"
         )
 
         payload = {
@@ -270,8 +300,11 @@ class SQLAgent:
             model_response = response.json().get('choices', [{}])[0].get('text', '').strip()
 
             # Улучшенная фильтрация ненужного текста
-            model_response = re.sub(r'<\|.*?\|>|```sql|://|<!--.*?-->|//.*|/\*.*?\*/|<!\[endif.*?\]', '',
+            model_response = re.sub(r'<\|.*?\|>|```sql|://|<!--.*?-->|//.*|/\*.*?\*/|<!\[endif.*?\]--><div class="answer"> <answer>', '',
                                     model_response).strip()
+
+            # Обрезаем текст после слов "Ответ завершен."
+            model_response = model_response.split("Ответ завершен")[0] + "Ответ завершен."
 
             print("\n=== Ответ модели ===")
             print(model_response)
@@ -303,6 +336,7 @@ class SQLAgent:
             "- Avoid including unnecessary technical jargon, focusing on clarity and simplicity.\n"
             "- If any additional assumptions or clarifications are needed to address the user's query, mention them explicitly in your answer."
             "Write on Russia language"
+            "В конце ответа напиши 'Ответ завершен.'"
         )
 
         payload = {
@@ -331,6 +365,9 @@ class SQLAgent:
 
         # Удаляем пустые строки и лишние пробелы
         cleaned_text = "\n".join([line.strip() for line in cleaned_text.splitlines() if line.strip()])
+
+        # Обрезаем текст после слов "Ответ завершен."
+        cleaned_text = cleaned_text.split("Ответ завершен")[0] + "Ответ завершен."
 
         return cleaned_text
 
