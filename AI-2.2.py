@@ -43,7 +43,8 @@ class SQLAgent:
             classification = response.json().get('choices', [{}])[0].get('text', '').strip()
 
             # Clean up the classification response
-            classification = re.sub(r'<\|.*?\|>|```sql|://|<!--.*?-->|//.*|/\*.*?\*/|<!\[endif.*?\]', '', classification).strip()
+            classification = re.sub(r'<\|.*?\|>|```sql|://|<!--.*?-->|//.*|/\*.*?\*/|<!\[endif.*?\]|после вывода запроса\.|после вывода SQL-запроса\.|SQL:|<sql_query>\.|###\.|SQL\.|Query:|### SQL|SQL',
+    '', classification).strip()
 
             print(f"Classification: {classification}")  # Add this line to help with debugging
             return classification
@@ -192,10 +193,9 @@ class SQLAgent:
             response.raise_for_status()
             model_response = response.json().get('choices', [{}])[0].get('text', '').strip()
 
-            # Улучшенная фильтрация ненужного текста
             model_response = re.sub(
-                r'<\|.*?\|>|```sql|://|<!--.*?-->|//.*|/\*.*?\*/|<!\[endif.*?\]|после вывода запроса\.|после вывода SQL-запроса\.|SQL:|<sql_query>\.|###\.|SQL\.|Query:|',
-                '',
+                r'<\|.*?\|>|```sql|://|<!--.*?-->|//.*|/\*.*?\*/|<!\[endif.*?\]|после вывода запроса\.|после вывода SQL-запроса\.|SQL:|<sql_query>\.|###\.|SQL\.|Query:|### SQL|SQL',
+    '',
                 model_response
             ).strip()
 
@@ -301,11 +301,11 @@ class SQLAgent:
             model_response = response.json().get('choices', [{}])[0].get('text', '').strip()
 
             # Улучшенная фильтрация ненужного текста
-            model_response = re.sub(r'<\|.*?\|>|```sql|://|<!--.*?-->|//.*|/\*.*?\*/|<!\[endif.*?\]--><div class="answer"> <answer>', '',
-                                    model_response).strip()
             model_response = re.sub(
-                r'<answer>', '',
-                model_response).strip()
+                r'<\|.*?\|>|```sql|://|<!--.*?-->|//.*|/\*.*?\*/|<!\[endif.*?\]|после вывода запроса\.|после вывода SQL-запроса\.|SQL:|<sql_query>\.|###\.|SQL\.|Query:|### SQL|SQL',
+    '',
+                model_response
+            ).strip()
 
             # Обрезаем текст после слов "Ответ завершен."
             model_response = model_response.split("Ответ завершен")[0] + "Ответ завершен."
@@ -365,7 +365,8 @@ class SQLAgent:
         cleaned_text = re.sub(r'<\|.*?\|>', '', response_text)
 
         # Убираем лишние символы вроде URL-подобных строк
-        cleaned_text = re.sub(r'<\|.*?\|>|```sql|://|<!--.*?-->|//.*|/\*.*?\*/|<!\[endif.*?\]', '', cleaned_text)
+        cleaned_text = re.sub(r'<\|.*?\|>|```sql|://|<!--.*?-->|//.*|/\*.*?\*/|<!\[endif.*?\]|после вывода запроса\.|после вывода SQL-запроса\.|SQL:|<sql_query>\.|###\.|SQL\.|Query:|### SQL|SQL',
+    '', cleaned_text)
 
         # Удаляем пустые строки и лишние пробелы
         cleaned_text = "\n".join([line.strip() for line in cleaned_text.splitlines() if line.strip()])
