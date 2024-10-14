@@ -193,18 +193,15 @@ class SQLAgent:
             model_response = response.json().get('choices', [{}])[0].get('text', '').strip()
 
             # Улучшенная фильтрация ненужного текста
-            model_response = re.sub(r'<\|.*?\|>|```sql|://|<!--.*?-->|//.*|/\*.*?\*/|<!\[endif.*?\]SQL Query:    после вывода запроса.', '',
-                                    model_response).strip()
+            model_response = re.sub(
+                r'<\|.*?\|>|```sql|://|<!--.*?-->|//.*|/\*.*?\*/|<!\[endif.*?\]|после вывода запроса\.|после вывода SQL-запроса\.|SQL:|<sql_query>',
+                '',
+                model_response
+            ).strip()
 
             # Обрезаем текст после слов "Ответ завершен."
-            model_response = model_response.split("Ответ завершен")[0] + "Ответ завершен."
-
-            model_response = re.sub(r'после вывода запроса.', '',
-                                    model_response).strip()
-            model_response = re.sub(r'после вывода SQL-запроса.', '',
-                                    model_response).strip()
-            model_response = re.sub(r'SQL:', '',
-                                    model_response).strip()
+            if "Ответ завершен" in model_response:
+                model_response = model_response.split("Ответ завершен")[0] + "Ответ завершен."
 
             print("\n=== Ответ модели ===")
             print(model_response)
