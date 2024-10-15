@@ -307,9 +307,6 @@ class SQLAgent:
 
     def generate_sql(self, query):
         """Отправляет запрос к модели API для генерации SQL-запроса и выводит структурированный результат."""
-        if not self.tables_info:
-            print("База данных пуста. Начните с создания первой таблицы.")
-            return None
 
         db_structure = "\n".join([
             f"Таблица {name}: колонки {', '.join(info['columns'].keys())}, "
@@ -344,7 +341,7 @@ class SQLAgent:
 
         payload = {
             "prompt": prompt,
-            "max_tokens": 200,  # Увеличил количество токенов для ответа
+            "max_tokens": 400,  # Увеличил количество токенов для ответа
             "temperature": 0
         }
 
@@ -646,6 +643,7 @@ if __name__ == '__main__':
 
     while True:
         try:
+            agent = SQLAgent(db_url)
             # Отображение информации о таблицах базы данных
             agent.display_tables_info()
 
