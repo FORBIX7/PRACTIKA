@@ -1,17 +1,10 @@
 import json
-import json
-from sqlalchemy.orm import configure_mappers
-from sqlalchemy_schemadisplay import create_schema_graph
-from PIL import Image
-import os
-from subprocess import run  # Добавляем импорт для использования run
 import pydot
 from subprocess import run
 
 import requests
 import re
 import sqlalchemy as sa
-from pygments.lexers import graphviz
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy import inspect
 from sqlalchemy_schemadisplay import create_schema_graph
@@ -77,11 +70,15 @@ class SQLAgent:
 
         # Подготовка промпта для AI модели
         prompt = (
-            "You are an expert AI model specializing in analyzing database structures and discovering relationships between tables. "
-            "You are provided with the structure of a relational database (tables, columns, primary keys, foreign keys). "
-            "Your task is to identify both existing relationships and logically possible relationships between the tables, "
+            "You are an expert AI model specializing in analyzing database structures and discovering relationships "
+            "between tables."
+            "You are provided with the structure of a relational database (tables, columns, primary keys, "
+            "foreign keys)."
+            "Your task is to identify both existing relationships and logically possible relationships between the "
+            "tables,"
             "based on the schema provided.\n\n"
-            "For possible relationships, suggest based on similar column names, data types, or inferred business logic.\n\n"
+            "For possible relationships, suggest based on similar column names, data types, or inferred business "
+            "logic.\n\n"
             "Here is the structure of the database:\n"
             f"<database_structure>\n{db_structure}\n</database_structure>\n\n"
             f"<user_query>\n{query}\n</user_query>\n\n"
@@ -129,7 +126,7 @@ class SQLAgent:
         payload = {
             "prompt": prompt,
             "max_tokens": 2000,
-            "temperature": 0.2  # Небольшая температура для получения точных ответов
+            "temperature": 7  # Небольшая температура для получения точных ответов
         }
 
         try:
@@ -227,9 +224,9 @@ class SQLAgent:
             # Форматируем отображение связи
             label = f"{table1}.{table1_column} -> {table2}.{table2_column}"
 
-            # Проверка типа связи
-            if relationship['relationship_type'] in ["possible", "logically_possible"]:
-                # Добавляем возможную или логически возможную связь (синий пунктир)
+            # Проверка типа связи или возможной связи
+            if relationship.get('possible', False):
+                # Добавляем возможную связь (синий пунктир)
                 graph.add_edge(pydot.Edge(
                     table1, table2,
                     label=label,
@@ -237,13 +234,25 @@ class SQLAgent:
                     color="blue"
                 ))
             else:
-                # Добавляем фактическую связь (обычная линия)
-                graph.add_edge(pydot.Edge(
-                    table1, table2,
-                    label=label,
-                    style="solid",
-                    color="black"
-                ))
+                # Получаем тип связи или устанавливаем по умолчанию "one-to-many"
+                relationship_type = relationship.get('relationship_type', 'one-to-many')
+
+                if relationship_type in ["possible", "logically_possible"]:
+                    # Добавляем возможную или логически возможную связь (синий пунктир)
+                    graph.add_edge(pydot.Edge(
+                        table1, table2,
+                        label=label,
+                        style="dotted",
+                        color="blue"
+                    ))
+                else:
+                    # Добавляем фактическую связь (обычная линия)
+                    graph.add_edge(pydot.Edge(
+                        table1, table2,
+                        label=label,
+                        style="solid",
+                        color="black"
+                    ))
 
         # Экспортируем диаграмму в формат .dot
         dot_file = f"{output_file}.dot"
@@ -360,6 +369,8 @@ class SQLAgent:
                 '',
                 model_response
             ).strip()
+            model_response = re.sub(r'\bQuery\b', '', model_response, flags=re.IGNORECASE).strip()
+
             # Обрезаем текст после слов "Ответ завершен."
             if "Ответ завершен" in model_response:
                 model_response = model_response.split("Ответ завершен")[0] + "Ответ завершен."
@@ -376,7 +387,7 @@ class SQLAgent:
                 line = line.strip()
                 # Удаляем однострочные комментарии
                 line = re.sub(r'--.*$', '', line).strip()
-                if not line:  # Пропускаем пустые строки
+                if not line or "Your Answer:" in line or "Ответ завершен." in line:
                     continue
 
                 # Проверяем на корректный SQL-запрос
@@ -529,6 +540,10 @@ class SQLAgent:
         cleaned_text = re.sub(r'<\|.*?\|>|```sql|://|<!--.*?-->|//.*|/\*.*?\*/|<!\[endif.*?\]|после вывода запроса\.|после вывода SQL-запроса\.|SQL:|<sql_query>\.|###\.|SQL\.|Query:|### SQL|SQL|### <database_structure>|###|<database_structure>',
     '', cleaned_text)
 
+        cleaned_text = re.sub(
+            r'Query',
+            '', cleaned_text)
+
         # Удаляем пустые строки и лишние пробелы
         cleaned_text = "\n".join([line.strip() for line in cleaned_text.splitlines() if line.strip()])
 
@@ -560,6 +575,7 @@ class SQLAgent:
 
                     # Очищаем ответ ИИ — передаем только сам текст
                     cleaned_analysis = self.clean_ai_response(analysis)
+
 
                     if cleaned_analysis:  # Проверяем на None
                         print(f"\nОтвет на ваш запрос: {cleaned_analysis}")
