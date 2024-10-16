@@ -620,7 +620,7 @@ class SQLAgent:
 
 # Пример использования
 if __name__ == '__main__':
-    db_url = 'sqlite:///12.db'
+    db_url = 'sqlite:///chinook.db'
     try:
         agent = SQLAgent(db_url)
         print("Подключение к базе данных успешно.")
