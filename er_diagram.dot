@@ -1,0 +1,35 @@
+digraph G {
+	graph [size="10,10!", dpi=300, ranksep=1.5, nodesep=1.0, bb="0,0,226.25,51",
+		concentrate=True,
+		mode=ipsep,
+		overlap=ipsep,
+		prog=dot,
+		rankdir=LR,
+		sep=0.01
+	];
+	node [shape=box, style=filled, color=lightblue, fontcolor=black, fontsize=12, fontname=Helvetica, label="\N"];
+	playlist_track	[fontname="Bitstream-Vera Sans",
+		fontsize=7.0,
+		height=0.70833,
+		label=<<TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0"><TR><TD ALIGN="CENTER">playlist_track</TD></TR><TR><TD BORDER="1" CELLPADDING="0"></TD></TR><TR><TD ALIGN="LEFT" PORT="PlaylistId">- PlaylistId : INTEGER</TD></TR><TR><TD ALIGN="LEFT" PORT="TrackId">- TrackId : INTEGER</TD></TR></TABLE>>,
+		pos="182.62,25.5",
+		shape=plaintext,
+		width=1.2118];
+	playlists	[fontname="Bitstream-Vera Sans",
+		fontsize=7.0,
+		height=0.70833,
+		label=<<TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0"><TR><TD ALIGN="CENTER">playlists</TD></TR><TR><TD BORDER="1" CELLPADDING="0"></TD></TR><TR><TD ALIGN="LEFT" PORT="PlaylistId">- PlaylistId : INTEGER</TD></TR><TR><TD ALIGN="LEFT" PORT="Name">- Name : NVARCHAR(120)</TD></TR></TABLE>>,
+		pos="51.5,25.5",
+		shape=plaintext,
+		width=1.4306];
+	playlists -> playlist_track	[arrowhead=none,
+		arrowtail=empty,
+		dir=both,
+		fontname="Bitstream-Vera Sans",
+		fontsize=7.0,
+		head_lp="121.96,30",
+		headlabel="+ PlaylistId",
+		pos="s,102.79,25.5 114.23,25.5 122.68,25.5 131.2,25.5 139.21,25.5",
+		tail_lp="120.04,21",
+		taillabel="+ PlaylistId"];
+}

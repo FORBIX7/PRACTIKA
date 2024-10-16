@@ -1,0 +1,82 @@
+digraph G {
+	graph [size="10,10!", dpi=300, ranksep=1.5, nodesep=1.0, bb="0,0,1543.8,158.12",
+		concentrate=True,
+		mode=ipsep,
+		overlap=ipsep,
+		prog=dot,
+		rankdir=LR,
+		sep=0.01
+	];
+	node [shape=box, style=filled, color=lightblue, fontcolor=black, fontsize=12, fontname=Helvetica, label="\N"];
+	car_components	[color=lightblue,
+		fontcolor=black,
+		fontname=Helvetica,
+		fontsize=12,
+		height=1.1806,
+		label=<<TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0"><TR><TD ALIGN="CENTER">car_components</TD></TR><TR><TD BORDER="1" CELLPADDING="0"></TD></TR><TR><TD ALIGN="LEFT" PORT="id">- id : INTEGER</TD></TR><TR><TD ALIGN="LEFT" PORT="component_name">- component_name : TEXT</TD></TR><TR><TD ALIGN="LEFT" PORT="department_id">- department_id : INTEGER</TD></TR></TABLE>>,
+		pos="998.88,101.5",
+		shape=box,
+		style=filled,
+		width=2.3368];
+	machines	[color=lightblue,
+		fontcolor=black,
+		fontname=Helvetica,
+		fontsize=12,
+		height=1.1806,
+		label=<<TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0"><TR><TD ALIGN="CENTER">machines</TD></TR><TR><TD BORDER="1" CELLPADDING="0"></TD></TR><TR><TD ALIGN="LEFT" PORT="id">- id : INTEGER</TD></TR><TR><TD ALIGN="LEFT" PORT="machine_name">- machine_name : TEXT</TD></TR><TR><TD ALIGN="LEFT" PORT="component_id">- component_id : INTEGER</TD></TR></TABLE>>,
+		pos="1460,42.5",
+		shape=box,
+		style=filled,
+		width=2.3264];
+	car_components -> machines	[color=black,
+		label="car_components.component_id -> machines.id",
+		lp="1229.6,95.492",
+		pos="e,1375.8,53.192 1083.3,90.781 1162.6,80.586 1281.8,65.266 1364.6,54.628",
+		style=solid];
+	departments	[color=lightblue,
+		fontcolor=black,
+		fontname=Helvetica,
+		fontsize=12,
+		height=1.434,
+		label=<<TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0"><TR><TD ALIGN="CENTER">departments</TD></TR><TR><TD BORDER="1" CELLPADDING="0"></TD></TR><TR><TD ALIGN="LEFT" PORT="id">- id : INTEGER</TD></TR><TR><TD ALIGN="LEFT" PORT="name">- name : TEXT</TD></TR><TR><TD ALIGN="LEFT" PORT="employee_name">- employee_name : TEXT</TD></TR><TR><TD ALIGN="LEFT" PORT="mechanic_id">- mechanic_id : INTEGER</TD></TR></TABLE>>,
+		pos="525.75,106.5",
+		shape=box,
+		style=filled,
+		width=2.2222];
+	departments -> car_components	[color=black,
+		label="departments.department_id -> car_components.id",
+		lp="760.25,113.67",
+		pos="e,914.59,102.38 606.14,105.66 688.08,104.79 815.91,103.43 903.1,102.51",
+		style=solid];
+	mechanics	[color=lightblue,
+		fontcolor=black,
+		fontname=Helvetica,
+		fontsize=12,
+		height=1.434,
+		label=<<TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0"><TR><TD ALIGN="CENTER">mechanics</TD></TR><TR><TD BORDER="1" CELLPADDING="0"></TD></TR><TR><TD ALIGN="LEFT" PORT="id">- id : INTEGER</TD></TR><TR><TD ALIGN="LEFT" PORT="department_id">- department_id : INTEGER</TD></TR><TR><TD ALIGN="LEFT" PORT="mechanic_name">- mechanic_name : TEXT</TD></TR><TR><TD ALIGN="LEFT" PORT="machine_id">- machine_id : INTEGER</TD></TR></TABLE>>,
+		pos="84.125,74.5",
+		shape=box,
+		style=filled,
+		width=2.3368];
+	mechanics -> departments	[arrowhead=odot,
+		arrowtail=crow,
+		dir=both,
+		fontname="Bitstream-Vera Sans",
+		fontsize=7.0,
+		head_lp="439.15,101.74",
+		headlabel="+ id",
+		pos="s,168.6,90.265 e,445.53,106.24 178.88,91.638 181.36,91.946 183.82,92.235 186.25,92.5 271.06,101.76 368.43,105.02 436.9,106.11",
+		tail_lp="194.48,94.765",
+		taillabel="+ department_id"];
+	mechanics -> departments	[color=black,
+		label="mechanics.department_id -> departments.id",
+		lp="307,80.25",
+		pos="e,445.4,75.855 168.53,65.684 238.33,60.26 340.26,56.905 427.75,72 429.93,72.376 432.13,72.796 434.33,73.256",
+		style=solid];
+	mechanics -> machines	[color=blue,
+		label="mechanics.machine_id -> machines.id",
+		lp="760.25,50.328",
+		pos="e,1375.9,41.53 168.62,59.657 174.57,58.847 180.5,58.114 186.25,57.5 301.05,45.241 330.33,48.338 445.75,45.5 783.67,37.19 1185.2,\
+39.665 1364.4,41.416",
+		style=dotted];
+}
