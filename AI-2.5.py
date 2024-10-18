@@ -1,6 +1,11 @@
 import json
 import pydot
 from subprocess import run
+from sqlalchemy import create_engine, MetaData, Table, Column, String, Integer
+import graphviz
+from subprocess import run
+from PIL import Image
+
 
 import requests
 import re
@@ -72,7 +77,7 @@ class SQLAgent:
         prompt = (
             "You are an AI model tasked with analyzing database structures. "
             "Your task is to identify relationships between two specific tables provided in the query. "
-            "Return only the relevant tables and the relationships between them, using the foreign keys if available. "
+            "Please ensure that you return only the relevant tables and the relationships between them, using the foreign keys if available. "
             "Do not include other tables or relationships.\n\n"
 
             "Here is the structure of the database:\n"
@@ -106,6 +111,7 @@ class SQLAgent:
             '  ]\n'
             '}\n\n'
 
+            "If no relevant tables or relationships are found, please indicate that clearly.\n"
             "End the response with 'Ответ завершен.'"
         )
 
@@ -164,97 +170,108 @@ class SQLAgent:
             print(f"Произошла ошибка при запросе: {e}")
             return None
 
-    def generate_er_diagram(self, tables_and_relationships, output_file="er_diagram", output_format="png", log=True):
+    def generate_er_diagram(self, tables_and_relationships, output_file="er_diagram_auto", output_format="png",
+                            log=True, relationship_styles=None):
         """
-        Генерация ER-диаграммы на основе полученных таблиц и связей с применением кастомного дизайна.
+        Генерация ER-диаграммы на основе полученных таблиц и связей.
         """
-        relevant_tables = tables_and_relationships.get("relevant_tables", [])
+        print("Результат анализа запроса:")
+        print(tables_and_relationships)
+
+        relevant_tables = [t["table_name"] for t in tables_and_relationships.get("relevant_tables", [])]
         relationships = tables_and_relationships.get("relationships", [])
 
-        if not relevant_tables:
-            print("Нет релевантных таблиц для визуализации.")
+        # Создаем новый объект MetaData для релевантных таблиц
+        relevant_metadata = MetaData()
+
+        # Добавляем только указанные таблицы в новый объект MetaData
+        for table_info in tables_and_relationships["relevant_tables"]:
+            table_name = table_info["table_name"]
+            if table_name in self.metadata.tables:
+                print(f"Добавление таблицы: {table_name}")
+                Table(table_name, relevant_metadata, autoload_with=self.engine)
+
+        print("Таблицы в relevant_metadata после добавления:", relevant_metadata.tables.keys())
+
+        # Создаем граф ER-диаграммы с помощью graphviz
+        try:
+            print("Создание графа ER-диаграммы...")
+            graph = graphviz.Digraph('ER Diagram', format=output_format)
+            graph.attr(rankdir='LR', concentrate='true', size="10,10!", dpi="300", nodesep="1.0", ranksep="1.5")
+        except Exception as e:
+            print(f"Ошибка при создании ER-диаграммы: {str(e)}")
             return
 
-        # Устанавливаем параметры визуализации для графа
-        graph = pydot.Dot(graph_type='digraph', rankdir="LR", fontsize="10", nodesep="1.0", ranksep="1.5", margin="0.2")
+        # Опциональная настройка стилей связей
+        if relationship_styles is None:
+            relationship_styles = {
+                'one-to-many': {"style": "solid", "color": "black"},
+                'many-to-many': {"style": "dashed", "color": "green"},
+                'possible': {"style": "dotted", "color": "blue"},
+            }
 
-        # Добавляем таблицы как узлы с названиями столбцов
-        for table_info in relevant_tables:
-            table_name = table_info["table_name"]
-            columns = table_info["columns"]
+        # Добавляем таблицы как узлы с нужной стилизацией
+        for table in relevant_tables:
+            print(f"Добавление узла для таблицы: {table}")
 
-            # Форматируем название узла с перечислением столбцов
-            column_labels = "\\n".join(
-                [f"{col['name']} ({col['data_type']})" for col in columns])  # Используем \\n для переноса строки
-            label = f"{table_name}\\n-----------------\\n{column_labels}"  # Название таблицы и столбцы под ним
+            # Формируем структуру таблицы: название таблицы (по центру), пустая строка, столбцы с типами данных
+            columns = [
+                f"- {col['name']} : {col['data_type'].upper()}"
+                for col in tables_and_relationships['relevant_tables'][relevant_tables.index(table)]['columns']
+            ]
+            table_label = f"{{ {table} | {{ | {' | '.join(columns)} }} }}"
 
-            graph.add_node(pydot.Node(
-                table_name,
-                shape="record",  # Изменен тип на record для более четкого отображения
-                style="filled",
-                color="lightblue",
-                fontcolor="black",
-                fontsize="12",
-                fontname="Helvetica",
-                label=label,  # Используем отформатированное название узла
-                width="2",  # Ширина узлов таблиц
-                height="1"  # Высота узлов таблиц
-            ))
+            # Добавляем таблицу как узел графа
+            graph.node(table, label=table_label, shape="record", style="filled", color="lightblue",
+                       fontname="Helvetica", fontsize="12")
 
-        # Добавляем связи с кастомными параметрами отображения
+        # Логирование всех таблиц в metadata
+        print("Таблицы в метаданных:")
+        print(self.metadata.tables.keys())
+
+        # Добавляем все связи, включая "возможные"
         for relationship in relationships:
             table1 = relationship['table1']
             table2 = relationship['table2']
-            table1_column = relationship['joining_columns']['table1_column']
-            table2_column = relationship['joining_columns']['table2_column']
 
-            label = f"{table1}.{table1_column} -> {table2}.{table2_column}"
+            print(f"Обработка связи: {table1} -> {table2}")
 
-            # Устанавливаем цвет и стиль ребер (связей)
-            graph.add_edge(pydot.Edge(
-                table1, table2,
-                label=label,
-                style="solid",
-                color="gray",
-                fontcolor="black",  # Цвет текста для подписей ребер
-                fontsize="10",  # Размер шрифта для подписей ребер
-                fontname="Helvetica"
-            ))
+            # Добавляем только связи между релевантными таблицами
+            if table1 in relevant_tables and table2 in relevant_tables:
+                table1_column = relationship['joining_columns']['table1_column']
+                table2_column = relationship['joining_columns']['table2_column']
+                label = f"{table1}.{table1_column} -> {table2}.{table2_column}"
 
-        # Экспортируем диаграмму в формат .dot
+                # Определяем тип связи
+                relationship_type = relationship.get('relationship_type', 'one-to-many')
+                style = relationship_styles.get(relationship_type, {"style": "solid", "color": "black"})
+
+                print(f"Добавление связи: {label}")
+                graph.edge(f"{table1}:{table1_column}", f"{table2}:{table2_column}", label=label, style=style["style"],
+                           color=style["color"])
+            else:
+                print(f"Пропуск связи между {table1} и {table2}, так как они не релевантны.")
+
+        print("Релевантные таблицы:")
+        print(relevant_tables)
+
+        print("Релевантные связи:")
+        for relationship in relationships:
+            print(f"{relationship['table1']} -> {relationship['table2']} (колонки: {relationship['joining_columns']})")
+
+        # Экспортируем диаграмму
         dot_file = f"{output_file}.dot"
-        graph.write(dot_file, format="dot")
+        graph.save(dot_file)
         print(f"ER-диаграмма сохранена в формате .dot: {dot_file}")
-
-        # Читаем .dot файл и применяем стилизацию
-        with open(dot_file, "r") as file:
-            dot_data = file.read()
-
-        # Добавляем кастомные стили и параметры графа
-        styled_dot_data = dot_data.replace(
-            'node [label=',
-            'node [shape=record, style=filled, color=lightblue, fontcolor=black, fontsize=12, fontname=Helvetica, label='
-        ).replace(
-            'edge [',
-            'edge [color=gray, fontsize=10, fontname=Helvetica, '
-        ).replace(
-            'graph [',
-            'graph [size="10,10!", dpi=300, ranksep=1.5, nodesep=1.0, '
-        )
-
-        # Перезаписываем файл с модификациями
-        with open(dot_file, "w") as file:
-            file.write(styled_dot_data)
 
         # Конвертируем .dot файл в нужный формат (например, PNG)
         output_file_with_extension = f"{output_file}.{output_format}"
-        from subprocess import run
-        run(["dot", f"-T{output_format}", dot_file, "-o", output_file_with_extension])
+        graph.render(filename=output_file_with_extension, cleanup=True)
 
         print(f"ER-диаграмма успешно создана и сохранена в файл: {output_file_with_extension}")
 
         # Открываем изображение для отображения
-        img_display = Image.open(output_file_with_extension)
+        img_display = Image.open(f"{output_file}.{output_format}.{output_format}")
         img_display.show()
 
         if log:
