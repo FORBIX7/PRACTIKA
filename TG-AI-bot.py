@@ -401,7 +401,7 @@ class SQLAgent:
 
             # Обрезаем текст после слов "Ответ завершен."
             if "Ответ завершен" in model_response:
-                model_response = model_response.split("Ответ завершен")[0]
+                model_response = model_response.split("Ответ завершен")[0] + "Ответ завершен."
 
             print("\n=== Ответ модели ===")
             print(model_response)

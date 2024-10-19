@@ -1,0 +1,7 @@
+digraph "ER Diagram" {
+	concentrate=true dpi=300 nodesep=1.0 rankdir=LR ranksep=1.5 size="10,10!"
+	suppliers [label="{ suppliers | { | - id : INTEGER | - supplier_name : STRING | - product_ref : INTEGER } }" color=lightblue fontname=Helvetica fontsize=12 shape=record style=filled]
+	products [label="{ products | { | - id : INTEGER | - product_name : STRING | - price : DECIMAL } }" color=lightblue fontname=Helvetica fontsize=12 shape=record style=filled]
+	orders [label="{ orders | { | - id : INTEGER | - order_date : DATE | - user_id : INTEGER } }" color=lightblue fontname=Helvetica fontsize=12 shape=record style=filled]
+	suppliers:product_ref -> products:id [label="suppliers.product_ref -> products.id" color=black style=solid]
+}
