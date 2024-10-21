@@ -1,0 +1,6 @@
+digraph "ER Diagram" {
+	concentrate=true dpi=300 nodesep=1.0 rankdir=LR ranksep=1.5 size="10,10!"
+	tracks [label="{ tracks | { | - TrackId : INT | - Name : STRING | - AlbumId : INT | - GenreId : INT | - MediaTypeId : TINYINT | - Composer : STRING | - Milliseconds : INT | - Bytes : INT | - UnitPrice : MONEY } }" color=lightblue fontname=Helvetica fontsize=12 shape=record style=filled]
+	playlist_track [label="{ playlist_track | { | - PlaylistId : INT | - TrackId : INT } }" color=lightblue fontname=Helvetica fontsize=12 shape=record style=filled]
+	tracks:TrackId -> playlist_track:TrackId [label="tracks.TrackId -> playlist_track.TrackId" color=black style=solid]
+}
