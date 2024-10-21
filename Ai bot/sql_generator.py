@@ -103,14 +103,9 @@ class SQLGenerator:
             unique_sql_queries = list(set(sql_queries))
 
             if unique_sql_queries:
-                print("\n=== Сгенерированные SQL-запросы ===")
-                for idx, sql in enumerate(unique_sql_queries, 1):
-                    print(f"{idx}. {sql.strip(';')}")
-                print("==============================\n")
-                return unique_sql_queries
+                return unique_sql_queries  # Возвращаем сгенерированные SQL-запросы
             else:
-                print("Не удалось найти корректные SQL-запросы в ответе модели.")
-                return None
+                return None  # Возвращаем None, если запросы не были сгенерированы
 
         except requests.exceptions.RequestException as e:
             print(f"Произошла ошибка при запросе: {e}")

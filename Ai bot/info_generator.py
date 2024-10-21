@@ -70,9 +70,7 @@ class InfoGenerator:
 
             model_response = model_response.split("Ответ завершен")[0] + "Ответ завершен."
 
-            print("\n=== Ответ модели ===")
-            print(model_response)
-            print("====================\n")
+            return model_response
 
         except requests.exceptions.RequestException as e:
             print(f"Произошла ошибка при запросе: {e}")

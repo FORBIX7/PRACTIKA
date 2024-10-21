@@ -36,81 +36,60 @@ if __name__ == '__main__':
 
     while True:
         try:
-
             agent.display_tables_info()
 
             user_query = input("Введите ваш запрос (или напишите 'exit' для выхода): ").strip().lower()
-
 
             if user_query == 'exit':
                 print("Завершение программы.")
                 break
 
-
             if 'диаграмм' in user_query:
                 tables_and_relationships = relationship_analyzer.analyze(user_query, agent.tables_info)
                 if tables_and_relationships:
                     er_diagram_generator.generate(tables_and_relationships)
+                else:
+                    print("Не удалось проанализировать диаграммы.")
             else:
                 query_type = query_classifier.classify(user_query)
+                print(f"Тип запроса: {query_type}")
 
                 if 'sql_generation' in query_type:
-                    print("Classification: Генерация SQL запроса")
                     sql_queries = sql_generator.generate(user_query, agent.tables_info)
                     if sql_queries:
+                        print("Сгенерированные SQL-запросы:")
+                        for query in sql_queries:
+                            print(query)
                         sql_executor.execute(sql_queries)
                     else:
                         print("Не удалось сгенерировать SQL-запрос.")
 
                 elif 'general_db_info' in query_type:
-                    print("Classification: Общий вопрос")
-                    info_generator.generate(user_query, agent.tables_info)
-
-
-                elif 'narrow_query' in query_type or 'нarrow_query' in query_type:
-
-                    print("Classification: узконаправленный запрос")
-
-                    sql_queries = sql_generator.generate(user_query, agent.tables_info)
-
-                    if sql_queries:
-
-                        with agent.engine.connect() as connection:
-
-                            try:
-
-                                analysis_results = []  # Список для хранения результатов анализа
-
-                                for sql_query in sql_queries:
-                                    result = connection.execute(sa.text(sql_query))
-
-                                    rows = result.fetchall() if result.returns_rows else []
-
-                                    analysis = narrow_query_analyzer.analyze(user_query, rows)
-
-                                    analysis_results.append(analysis)  # Добавляем результат анализа в список
-
-                                if analysis_results:
-
-                                    print("Результаты анализа узконаправленного запроса:")
-
-                                    for analysis in analysis_results:
-                                        print(analysis)  # Выводим или обрабатываем результаты анализа
-
-                                else:
-
-                                    print("Анализ не дал результатов.")
-
-
-
-
-                            except SQLAlchemyError as e:
-
-                                print(f"Ошибка выполнения SQL-запроса: {e}")
-
-
+                    info = info_generator.generate(user_query, agent.tables_info)
+                    if info:
+                        print("Информация о базе данных:")
+                        print(info)
                     else:
+                        print("Не удалось получить информацию о базе данных.")
 
+                elif 'narrow_query' in query_type:
+                    sql_queries = sql_generator.generate(user_query, agent.tables_info)
+                    if sql_queries:
+                        with agent.engine.connect() as connection:
+                            analysis_results = []
+                            for sql_query in sql_queries:
+                                result = connection.execute(sa.text(sql_query))
+                                rows = result.fetchall() if result.returns_rows else []
+                                analysis = narrow_query_analyzer.analyze(user_query, rows)
+                                analysis_results.append(analysis)
+
+                            if analysis_results:
+                                print("Результаты анализа узконаправленного запроса:")
+                                for analysis in analysis_results:
+                                    print(analysis)
+                            else:
+                                print("Анализ не дал результатов.")
+                    else:
                         print("Не удалось сгенерировать SQL-запрос для узконаправленного запроса.")
 
                 else:
@@ -119,10 +98,5 @@ if __name__ == '__main__':
         except Exception as e:
             print(f"Произошла ошибка: {e}")
 
-
-        print("==============================")
         if input("Напишите 'exit', чтобы выйти, или нажмите Enter для продолжения... ").strip().lower() == "exit":
             break
-        print("==============================")
-
-    print("Программа завершена.")
