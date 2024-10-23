@@ -1,10 +1,9 @@
 import json
-import pydot
-from subprocess import run
-from sqlalchemy import create_engine, MetaData, Table, Column, String, Integer
+from config import DATABASE_URL, OPENAI_API_KEY, PROXY_HOST, PROXY_PORT, PROXY_USERNAME, PROXY_PASSWORD, BOT_TOKEN
+from sqlalchemy import create_engine, MetaData, Table, text
 import graphviz
-from subprocess import run
-from PIL import Image
+from telegram import Update, ForceReply
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 import openai
 import requests
 import re
@@ -90,7 +89,91 @@ class SQLAgent:
             print(f"Произошла ошибка при запросе: {error}")
             return None
 
+    def generate_er_diagram_for_all(self, output_file="er_diagram_full", output_format="png", log=True,
+                                    relationship_styles=None):
+        # Извлечение всех таблиц и их связей из метаданных
+        relevant_metadata = MetaData()
+        relevant_metadata.reflect(bind=self.database_engine)
+
+        # Создание объекта для построения графа
+        try:
+            graph = graphviz.Digraph('ER Diagram', format=output_format)
+            graph.attr(rankdir='LR', concentrate='true', size="10,10!", dpi="300", nodesep="1.0", ranksep="1.5")
+        except Exception as error:
+            print(f"Ошибка при создании ER-диаграммы: {str(error)}")
+            return
+
+        if relationship_styles is None:
+            relationship_styles = {
+                'one-to-many': {"style": "solid", "color": "black"},
+                'many-to-many': {"style": "dashed", "color": "green"},
+                'possible': {"style": "dotted", "color": "blue"},
+            }
+
+        # Добавление узлов для каждой таблицы
+        for table in relevant_metadata.tables.values():
+            columns = [f"- {col.name} : {col.type}" for col in table.columns]
+            table_label = f"{{ {table.name} | {{ {' | '.join(columns)} }} }}"
+            graph.node(table.name, label=table_label, shape="record", style="filled", color="lightblue",
+                       fontname="Helvetica", fontsize="12")
+
+        # Обработка связей между таблицами
+        for table in relevant_metadata.tables.values():
+            for fk in table.foreign_keys:
+                referenced_table = fk.column.table.name
+                fk_label = f"{table.name}.{fk.column.name} -> {referenced_table}.{fk.column.name}"
+                graph.edge(f"{table.name}:{fk.parent.name}", f"{referenced_table}:{fk.column.name}", label=fk_label,
+                           style=relationship_styles['one-to-many']["style"],
+                           color=relationship_styles['one-to-many']["color"])
+
+        # Сохранение диаграммы
+        dot_file = f"{output_file}.dot"
+        graph.save(dot_file)
+        print(f"ER-диаграмма сохранена в формате .dot: {dot_file}")
+
+        output_file_with_extension = f"{output_file}.{output_format}"
+        graph.render(filename=output_file_with_extension, cleanup=True)
+        print(f"ER-диаграмма успешно создана и сохранена в файл: {output_file_with_extension}")
+        image_display = Image.open(f"{output_file}.{output_format}.{output_format}")
+        image_display.show()
+        if log:
+            print(f"ER-диаграмма успешно создана и сохранена в файл: {output_file_with_extension}")
+
     def analyze_query_for_relationships(self, query):
+
+        # Определяем ключевые слова, указывающие на необходимость создания диаграммы для всей базы данных
+        keywords = [
+            "вся база данных",
+            "все связи",
+            "все таблицы",
+            "полная диаграмма",
+            "ER всех таблиц",
+            "полная база данных",
+            "все объекты",
+            "все таблицы и связи",
+            "все таблицы базы данных",
+            "все объекты базы",
+            "вся схема",
+            "полная ER диаграмма",
+            "все данные базы",
+            "все сущности",
+            "полная схема данных",
+            "полная схема таблиц",
+            "генерация диаграммы всех таблиц",
+            "все таблицы и их связи",
+            "все отношения",
+            "ER диаграмма всех объектов",
+            "диаграмма всей базы данных",
+            "диаграмма всех таблиц",
+            "все сущности и связи"
+        ]
+
+        # Проверяем, содержит ли запрос какие-либо из ключевых слов
+        if any(keyword in query.lower() for keyword in keywords):
+            print("Создание ER-диаграммы для всей базы данных...")
+            self.generate_er_diagram_for_all()
+            return "er_diagram_full.png.png"
+
         db_structure = {
             "tables": [
                 {
@@ -185,6 +268,7 @@ class SQLAgent:
             configure_mappers()
             try:
                 self.generate_er_diagram(tables_and_relationships)
+                return "er_diagram_auto.png.png"  # Возвращаем имя файла
             except ImportError as error:
                 print("Необходимо установить pygraphviz для генерации диаграмм.")
                 print(f"Ошибка: {error}")
@@ -256,24 +340,38 @@ class SQLAgent:
 
     def load_database(self):
         try:
+            # Очищаем кэш метаданных перед обновлением
+            self.database_metadata.clear()
+
+            # Перезагружаем метаданные базы данных
             self.database_metadata.reflect(bind=self.database_engine)
+
         except SQLAlchemyError as error:
             print(f"Ошибка при загрузке структуры базы данных: {error}")
+            return
+
+        # Очищаем информацию о таблицах
+        self.tables_information.clear()
+
         if not self.database_metadata.tables:
             print("Таблицы отсутствуют в базе данных. Проверьте базу данных.")
             return
+
         for table_name in self.database_metadata.tables:
             table = self.database_metadata.tables[table_name]
             self.tables_information[table_name] = {
                 'columns': {column.name: str(column.type) for column in table.columns},
                 'primary_keys': [column.name for column in table.primary_key],
-                'foreign_keys': {foreign_key.column.name: str(foreign_key.target_fullname) for foreign_key in table.foreign_keys}
+                'foreign_keys': {foreign_key.column.name: str(foreign_key.target_fullname) for foreign_key in
+                                 table.foreign_keys}
             }
+
         print("\n=== База данных загружена. Доступные таблицы ===")
         print(list(self.tables_information.keys()))
         print("===============================================\n")
 
     def generate_sql(self, query):
+        # Формирование структуры базы данных
         db_structure = {
             "tables": [
                 {
@@ -286,86 +384,102 @@ class SQLAgent:
             ]
         }
         db_structure_json = json.dumps(db_structure, ensure_ascii=False, indent=2)
+
+        # Обновленный промт
         prompt = (
             "You are an expert SQL developer specializing in SQLite databases. "
             "Your task is to generate correct SQL queries based on the provided database structure in response to user queries.\n\n"
-            "Here is the structure of the database:\n"
-            f"<database_structure>\n"
+
+            "First, carefully review the structure of the database:\n\n"
+            "<database_structure>\n"
             f"{db_structure_json}\n"
-            f"</database_structure>\n\n"
-            "Your task is to generate a correct SQL query that addresses the user's request. Follow these guidelines:\n\n"
-            "1. Use only the tables and columns provided in the database structure.\n"
-            "2. Ensure your query is syntactically correct for SQLite.\n"
-            "3. Use appropriate JOIN clauses when querying multiple tables.\n"
-            "4. Include WHERE clauses as necessary to filter results.\n"
-            "5. Use aggregation functions (COUNT, SUM, AVG, etc.) when appropriate.\n"
-            "6. Order results using ORDER BY if it makes sense for the query.\n"
-            "7. Limit results using LIMIT if specified in the user's request.\n\n"
-            "The user's query is:\n"
-            f"<user_query>\n"
+            "</database_structure>\n\n"
+
+            "Here is the user's query:\n\n"
+            "<user_query>\n"
             f"{query}\n"
-            f"</user_query>\n\n"
-            "Based on the database structure and the user's query, generate the appropriate SQL query. "
-            "Output only the SQL query without any additional explanations or comments."
-            "В конце ответа напиши 'Ответ завершен.'"
+            "</user_query>\n\n"
+
+            "When a user presents a query, your goal is to generate a correct SQL query that addresses their request. "
+            "Follow these steps:\n\n"
+
+            "1. Analyze the user's query and break it down into its component parts.\n"
+            "2. Identify the tables and columns needed to answer the query.\n"
+            "3. Consider potential JOIN conditions between tables.\n"
+            "4. Outline the structure of the SQL query (SELECT, FROM, WHERE, etc.).\n"
+            "5. Formulate the SQL query, ensuring it adheres to SQLite syntax and best practices.\n"
+            "6. Verify that all tables, columns, and aliases used in your query exist in the provided database structure.\n"
+            "7. Reflect on the query's correctness and make any necessary adjustments.\n\n"
+
+            "Wrap your response in the following tags:\n\n"
+            "<thought>\n"
+            "[Analyze the user's query, explicitly list required tables and columns, consider JOIN conditions, outline the SQL query structure, and explain your approach to generating the SQL query]\n"
+            "</thought>\n\n"
+
+            "<sql_query>\n"
+            "[Generate the SQL query here, following SQLite syntax and best practices]\n"
+            "</sql_query>\n\n"
+
+            "<thought>\n"
+            "[Verify that all tables, columns, and aliases in your query exist in the database structure. Reflect on the query's correctness and make any necessary adjustments]\n"
+            "</thought>\n\n"
+
+            "<sql_query_correct>\n"
+            "[If you made any adjustments, provide the final, corrected SQL query here. If no adjustments were needed, state 'No adjustments needed.']\n"
+            "</sql_query_correct>\n\n"
         )
-        payload = {
-            "prompt": prompt,
-            "max_tokens": 400,
-            "temperature": 0
-        }
+
         try:
-            model_response = self.chatgpt_request(prompt, maximum_tokens=400, temperature=0)
-            model_response = re.sub(
-                r'<\|.*?\|>|```sql|://|<!--.*?-->|//.*|/\*.*?\*/|<!\[endif.*?\]|после вывода запроса\.|после вывода SQL-запроса\.|SQL:|<sql_query>\.|<generated_sql>\.|###\.|SQL\.|Query:|### SQL|SQL|### <database_structure>|###|<database_structure>',
-                '',
-                model_response
-            ).strip()
-            model_response = re.sub(
-                r'<generated_sql>',
-                '',
-                model_response
-            ).strip()
-            model_response = re.sub(r'\bQuery\b', '', model_response, flags=re.IGNORECASE).strip()
-            model_response = re.sub(r'Ответ:', '', model_response, flags=re.IGNORECASE).strip()
-            model_response = re.sub(r'<sql_query>', '', model_response, flags=re.IGNORECASE).strip()
-            if "Ответ завершен" in model_response:
-                model_response = model_response.split("Ответ завершен")[0]
-            print("\n=== Ответ модели ===")
+            model_response = self.chatgpt_request(prompt, maximum_tokens=800, temperature=0)
             print(model_response)
-            print("====================\n")
-            sql_queries = []
-            current_query = ""
-            for line in model_response.splitlines():
-                line = line.strip()
-                line = re.sub(r'--.*$', '', line).strip()
-                if not line or "Your Answer:" in line or "Ответ завершен." in line:
-                    continue
-                if re.match(r'^(SELECT|INSERT|UPDATE|DELETE|CREATE|ALTER|DROP)', line, re.IGNORECASE):
-                    if current_query:
-                        current_query += " " + line
-                    else:
-                        current_query = line
-                else:
-                    current_query += " " + line
-                if current_query.endswith(';'):
-                    sql_queries.append(current_query.strip())
-                    current_query = ""
-            sql_queries = [sql for sql in sql_queries if sql]
-            unique_sql_queries = list(set(sql_queries))
-            if unique_sql_queries:
-                print("\n=== Сгенерированные SQL-запросы ===")
-                for index, sql in enumerate(unique_sql_queries, 1):
-                    print(f"{index}. {sql.strip(';')}")
-                print("==============================\n")
-                return unique_sql_queries
+
+            # Извлечение SQL-запросов из тегов
+            sql_query = None
+            sql_query_correct = None
+
+            # Проверка на наличие тегов
+            if "<sql_query>" in model_response:
+                sql_query = re.search(r'<sql_query>(.*?)</sql_query>', model_response, re.DOTALL)
+            if "<sql_query_correct>" in model_response:
+                sql_query_correct = re.search(r'<sql_query_correct>(.*?)</sql_query_correct>', model_response,
+                                              re.DOTALL)
+
+            # Получаем SQL-запросы из тегов
+            if sql_query:
+                sql_query = sql_query.group(1).strip()
+            if sql_query_correct:
+                sql_query_correct = sql_query_correct.group(1).strip()
+
+            # Логика выбора запроса
+            if sql_query_correct and sql_query_correct != "No adjustments needed.":
+                final_sql_query = sql_query_correct
             else:
-                print("Не удалось найти корректные SQL-запросы в ответе модели.")
+                final_sql_query = sql_query
+
+            # Проверка на наличие финального SQL-запроса
+            if final_sql_query:
+                # Разбор и фильтрация SQL-запросов
+                sql_queries = [final_sql_query]
+
+                # Убираем дублирующиеся запросы
+                unique_sql_queries = list(set(sql_queries))
+
+                if unique_sql_queries:
+                    print("\n=== Сгенерированные SQL-запросы ===")
+                    for index, sql in enumerate(unique_sql_queries, 1):
+                        print(f"{index}. {sql.strip(';')}")
+                    print("==============================\n")
+                    return unique_sql_queries
+                else:
+                    print("Не удалось найти корректные SQL-запросы в ответе модели.")
+                    return None
+            else:
+                print("Финальный SQL-запрос не найден.")
                 return None
+
         except requests.exceptions.RequestException as error:
             print(f"Произошла ошибка при запросе: {error}")
             return None
-
 
     def generate_info(self, query):
         if not self.tables_information:
@@ -406,12 +520,6 @@ class SQLAgent:
             "В конце ответа напиши 'Ответ завершен.'"
         )
 
-        payload = {
-            "prompt": prompt,
-            "max_tokens": 600,
-            "temperature": 0
-        }
-
         try:
             model_response = self.chatgpt_request(prompt, maximum_tokens=600, temperature=0)
             model_response = re.sub(
@@ -420,9 +528,13 @@ class SQLAgent:
                 model_response
             ).strip()
             model_response = model_response.split("Ответ завершен")[0]
-            print("\n=== Ответ модели ===")
+            print("\n=== Ответ модели ===")  # Логирование для отладки
             print(model_response)
             print("====================\n")
+            return model_response  # ВОЗВРАЩАЕМ результат!
+        except requests.exceptions.RequestException as error:
+            print(f"Произошла ошибка при запросе: {error}")
+            return f"Ошибка при получении информации: {error}"
 
         except requests.exceptions.RequestException as error:
             print(f"Произошла ошибка при запросе: {error}")
@@ -450,15 +562,12 @@ class SQLAgent:
             "В конце ответа напиши 'Ответ завершен.'"
         )
 
-        payload = {
-            "prompt": prompt,
-            "max_tokens": 200,
-            "temperature": 0
-        }
-
         try:
             analysis = self.chatgpt_request(prompt, maximum_tokens=200, temperature=0)
-            return analysis
+            print("\n=== Анализ результата запроса ===")  # Логирование для отладки
+            print(analysis)
+            print("==============================\n")
+            return analysis  # ВОЗВРАЩАЕМ результат!
 
         except requests.exceptions.RequestException as error:
             print(f"Ошибка при запросе: {error}")
@@ -483,13 +592,13 @@ class SQLAgent:
     def narrow_query_analyzer(self, query):
         sql_queries = self.generate_sql(query)
         if not sql_queries:
-            print("Не удалось сгенерировать SQL-запрос.")
-            return None
+            return "Не удалось сгенерировать SQL-запрос."  # Возвращаем текст ошибки
 
+        final_analysis = ""  # Переменная для накопления результатов
         with self.database_engine.connect() as connection:
             try:
                 for sql_query in sql_queries:
-                    result = connection.execute(sa.text(sql_query))
+                    result = connection.execute(text(sql_query))
                     if result.returns_rows:
                         rows = result.fetchall()
                         analysis = self.analyze_sql_result(rows, query)
@@ -497,11 +606,13 @@ class SQLAgent:
                         analysis = self.analyze_sql_result([], query)
                     cleaned_analysis = self.clean_ai_response(analysis)
                     if cleaned_analysis:
-                        print(f"\nОтвет на ваш запрос: {cleaned_analysis}")
+                        final_analysis += f"\nОтвет на ваш запрос: {cleaned_analysis}\n"  # Добавляем результат к общей строке
                     else:
-                        print("Не удалось получить ответ от ИИ.")
+                        final_analysis += "Не удалось получить ответ от ИИ.\n"  # Добавляем сообщение об ошибке
             except SQLAlchemyError as error:
-                print(f"Ошибка выполнения SQL-запроса: {error}")
+                final_analysis += f"Ошибка выполнения SQL-запроса: {error}\n"  # Добавляем сообщение об ошибке
+
+        return final_analysis.strip()  # Возвращаем собранный результат
 
 
 
@@ -539,38 +650,145 @@ class SQLAgent:
 
     def display_tables_info(self):
         if not self.tables_information:
-            print("Таблицы отсутствуют в базе данных.")
-            return
+            return "Таблицы отсутствуют в базе данных."
 
-        print("\n" + "=" * 50)
-        print("Информация о таблицах в базе данных:")
-        print("=" * 50)
+        tables_info = "\n" + "=" * 50 + "\n"
+        tables_info += "Информация о таблицах в базе данных:\n"
+        tables_info += "=" * 50 + "\n"
 
         for table_name, info in self.tables_information.items():
-            print(f"\nТаблица: {table_name}")
-            print("-" * 50)
-            print(f"{'Колонки:':<15}",
-                  ", ".join([f"{col_name} ({col_type})" for col_name, col_type in info['columns'].items()]))
-            print(f"{'Первичные ключи:':<15}", ", ".join(info['primary_keys']) if info['primary_keys'] else "Нет")
+            tables_info += f"\nТаблица: {table_name}\n"
+            tables_info += "-" * 50 + "\n"
+            tables_info += f"Колонки: {', '.join([f'{col_name} ({col_type})' for col_name, col_type in info['columns'].items()])}\n"
+            tables_info += f"Первичные ключи: {', '.join(info['primary_keys']) if info['primary_keys'] else 'Нет'}\n"
             if info['foreign_keys']:
-                print(f"{'Внешние ключи:':<15}",
-                      ", ".join([f"{col} -> {fk}" for col, fk in info['foreign_keys'].items()]))
+                tables_info += f"Внешние ключи: {', '.join([f'{col} -> {fk}' for col, fk in info['foreign_keys'].items()])}\n"
             else:
-                print(f"{'Внешние ключи:':<15} Нет")
-            print("-" * 50)
+                tables_info += "Внешние ключи: Нет\n"
+            tables_info += "-" * 50 + "\n"
 
-        print("\nКонец списка таблиц.")
-        print("=" * 50)
+        tables_info += "\nКонец списка таблиц.\n" + "=" * 50
+        return tables_info
 
 
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text('Привет! Я SQL бот. Введи свой запрос.'
+                                    ' Вывести доступные таблицы /info')
+
+def register_handlers(application):
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("info", info_command))  # Обработчик команды /info
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
+async def info_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    agent = context.bot_data['sql_agent']  # Для краткости
+    agent.load_database()
+    # Вызываем метод, чтобы получить информацию о таблицах
+    tables_info = agent.display_tables_info()
+
+    # Отправляем информацию частями, если текст слишком длинный
+    for chunk in split_message(tables_info):
+        await update.message.reply_text(chunk)
+
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_query = update.message.text.strip().lower()
+    agent = context.bot_data['sql_agent']
+
+    # Перед началом работы с запросом, обновляем информацию о таблицах
+    await update.message.reply_text("Анализирую структуру базы данных...")
+    agent.load_database()  # Обновляем информацию о структуре базы данных
+
+    application.add_handler(CommandHandler("info", info_command))
+
+    if 'диаграмм' in user_query:
+        await update.message.reply_text("Строю диаграмму...")
+        # Анализируем запрос и строим диаграмму отношений
+        diagram_filename = agent.analyze_query_for_relationships(user_query)
+
+        if diagram_filename:  # Проверяем, вернула ли функция имя файла диаграммы
+            try:
+                with open(diagram_filename, "rb") as photo:
+                    await update.message.reply_photo(photo)
+            except FileNotFoundError:
+                await update.message.reply_text("Ошибка: файл диаграммы не найден.")
+        else:
+            await update.message.reply_text("Не удалось сгенерировать диаграмму.")
+
+    else:
+        query_type = agent.classify_query(user_query)
+
+        if query_type == 'sql_generation':
+            await update.message.reply_text("Пишу SQL-запрос...")
+            sql_queries = agent.generate_sql(user_query)
+            if sql_queries:
+                results = []
+                for query in sql_queries:
+                    try:
+                        with agent.database_engine.connect() as connection:
+                            result = connection.execute(text(query))  # Используем text()
+                            if result.returns_rows:
+                                rows = result.fetchall()
+                                formatted_rows = "\n".join(
+                                    [str(row) for row in rows]) or "Пустой результат"  # Обработка пустого результата
+                                results.append(f"Результат запроса:\n```sql\n{query}\n```\n\n{formatted_rows}")
+                            else:
+                                connection.commit()
+                                results.append(f"Запрос выполнен:\n```sql\n{query}\n```")
+                    except SQLAlchemyError as e:
+                        results.append(f"Ошибка при выполнении запроса:\n```sql\n{query}\n```\n\n{e}")
+
+                response_text = "\n\n".join(results)
+                for chunk in split_message(response_text):
+                    await update.message.reply_text(chunk, parse_mode="Markdown")  # Добавлено parse_mode
+            else:
+                await update.message.reply_text("Не удалось сгенерировать SQL-запрос.")
+
+        elif query_type == 'general_db_info':
+            await update.message.reply_text("Анализирую информацию о базе данных...")
+            info_response = agent.generate_info(user_query)
+            if info_response:
+                for chunk in split_message(info_response):  # Разбиваем длинные сообщения
+                    await update.message.reply_text(chunk)
+            else:
+                await update.message.reply_text("Не удалось получить информацию о базе данных.")
+
+        elif query_type == 'narrow_query':
+            await update.message.reply_text("Анализирую узконаправленный запрос...")
+            narrow_query_response = agent.narrow_query_analyzer(user_query)
+            if narrow_query_response:
+                for chunk in split_message(narrow_query_response):
+                    await update.message.reply_text(chunk)
+            else:
+                await update.message.reply_text(
+                    "Не удалось обработать узконаправленный запрос.")  # Более информативное сообщение
+
+def split_message(text, max_length=4096):
+  """
+  Разбивает длинное сообщение на части, подходящие для Telegram.
+  """
+  if len(text) <= max_length:
+    return [text]
+
+  chunks = []
+  current_chunk = ""
+  for line in text.splitlines():
+    if len(current_chunk) + len(line) + 1 > max_length:
+      chunks.append(current_chunk)
+      current_chunk = ""
+    current_chunk += line + "\n"
+  chunks.append(current_chunk)  # Добавляем последний chunk
+  return chunks
 
 if __name__ == '__main__':
-    database_url = 'sqlite:///chinook.db'
-    openai_api_key = "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"
-    proxy_host = "45.147.101.43"
-    proxy_port = 8000
-    proxy_username = "g0VNyj"
-    proxy_password = "qXzRs5"
+
+    # Получение значений переменных окружения
+    database_url = os.getenv('DATABASE_URL')
+    openai_api_key = os.getenv('OPENAI_API_KEY')
+    proxy_host = os.getenv('PROXY_HOST')
+    proxy_port = int(os.getenv('PROXY_PORT'))  # Преобразование в целое число
+    proxy_username = os.getenv('PROXY_USERNAME')
+    proxy_password = os.getenv('PROXY_PASSWORD')
+    bot_token = os.getenv('BOT_TOKEN')
 
     try:
         sql_agent = SQLAgent(database_url, openai_api_key, proxy_host, proxy_port, proxy_username, proxy_password)
@@ -579,49 +797,12 @@ if __name__ == '__main__':
         print(f"Ошибка подключения к базе данных: {error}")
         exit(1)
 
-    while True:
-        try:
-            sql_agent = SQLAgent(database_url, openai_api_key, proxy_host, proxy_port, proxy_username, proxy_password)
-            sql_agent.display_tables_info()
+    application = ApplicationBuilder().token(BOT_TOKEN).build()
+    application.bot_data['sql_agent'] = sql_agent  # Сохраняем экземпляр SQLAgent
 
-            user_query = input("Введите ваш запрос (или напишите 'exit' для выхода): ").strip().lower()
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("info", info_command))  # Обработчик команды /info
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-            if user_query == 'exit':
-                print("Завершение программы.")
-                break
-
-            if 'диаграмм' in user_query:
-                sql_agent.analyze_query_for_relationships(user_query)
-            else:
-                query_type = sql_agent.classify_query(user_query)
-
-                if 'sql_generation' in query_type:
-                    print("Classification: Генерация SQL запроса")
-                    sql_queries = sql_agent.generate_sql(user_query)
-
-                    if sql_queries:
-                        sql_agent.execute_sql_queries(sql_queries)
-                    else:
-                        print("Не удалось сгенерировать SQL-запрос.")
-
-                elif 'general_db_info' in query_type:
-                    print("Classification: Общий вопрос")
-                    sql_agent.generate_info(user_query)
-                elif 'narrow_query' in query_type:
-                    print("Classification: узконаправленный запрос")
-                    sql_agent.narrow_query_analyzer(user_query)
-
-
-                else:
-                    print("Не удалось классифицировать запрос.")
-
-        except Exception as error:
-            print(f"Произошла ошибка: {error}")
-
-
-        print("==============================")
-        if input("Напишите 'exit', чтобы выйти, или нажмите Enter для продолжения... ").strip().lower() == "exit":
-            break
-        print("==============================")
-
-    print("Программа завершена.")
+    application.run_polling()
+    print("Бот запущен.")
