@@ -1,3 +1,0 @@
-requests~=2.32.3
-SQLAlchemy~=2.0.35
-sqlalchemy_schemadisplay~=2.0
